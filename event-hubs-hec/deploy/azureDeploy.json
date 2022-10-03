@@ -89,7 +89,7 @@
 
         "githubRepoURL": {
             "type": "string",
-            "defaultValue": "<TO BE UPDATED>"
+            "defaultValue": "https://github.com/daningu.git"
         },
         "githubRepoBranch": {
             "type": "string",
@@ -97,7 +97,7 @@
         },
         "githubRepoProject": {
             "type": "string",
-            "defaultValue": "event-hubs-humio"
+            "defaultValue": "event-hubs-hec"
         },
         "HumioURL": {
             "type": "string",
