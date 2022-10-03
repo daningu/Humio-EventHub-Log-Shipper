@@ -1,0 +1,247 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "appName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the function app that you wish to create."
+            }
+        },
+        "storageAccountType": {
+            "type": "string",
+            "defaultValue": "Standard_LRS",
+            "allowedValues": [
+                "Standard_LRS",
+                "Standard_GRS",
+                "Standard_RAGRS",
+                "Standard_ZRS"
+            ],
+            "metadata": {
+                "description": "Storage Account type"
+            }
+        },
+        "storageAccountTLS": {
+            "type": "string",
+            "defaultValue": "TLS1_2",
+            "allowedValues": [
+                "TLS1_0",
+                "TLS1_1",
+                "TLS1_2"
+            ],
+            "metadata": {
+                "description": "Storage Account TLS version"
+            }
+        },
+        "eventHubConnectionString": {
+            "type": "string",
+            "metadata": {
+                "description": "Event Hub Namespace connection string"
+            }
+        },
+
+        "activityLogHubName": {
+            "type": "string",
+            "defaultValue": "insights-activity-logs",
+            "metadata": {
+                "description": "Event Hub name containing activity logs"
+            }
+        },
+        "activityLogEventHubConsumerGroup": {
+            "type": "string",
+            "defaultValue": "$Default",
+            "metadata": {
+                "description": "Consumer group for the activity log Event Hub"
+            }
+        },
+        "activityLogSourceType": {
+            "type": "string",
+            "defaultValue": "azure:activity:log",
+            "metadata": {
+                "description": "Splunk source type for the activity log Event Hub"
+            }
+        },
+        "activityLogDisabled": {
+            "type": "bool",
+            "defaultValue": false
+        },
+
+        "aadLogHubName": {
+            "type": "string",
+            "defaultValue": "insights-logs-aad",
+            "metadata": {
+                "description": "Event Hub name containing Azure Active Directory logs"
+            }
+        },
+        "aadLogEventHubConsumerGroup": {
+            "type": "string",
+            "defaultValue": "$Default",
+            "metadata": {
+                "description": "Consumer group for the Azure Active Directory log Event Hub"
+            }
+        },
+
+        "aadLogDisabled": {
+            "type": "bool",
+            "defaultValue": false
+        },
+
+
+        "githubRepoURL": {
+            "type": "string",
+            "defaultValue": "<TO BE UPDATED>"
+        },
+        "githubRepoBranch": {
+            "type": "string",
+            "defaultValue": "master"
+        },
+        "githubRepoProject": {
+            "type": "string",
+            "defaultValue": "event-hubs-humio"
+        },
+        "HumioURL": {
+            "type": "string",
+            "metadata": {
+                "description": "Humio repository with raw api URL"
+            }
+        },
+        "IngestToken": {
+            "type": "string",
+            "metadata": {
+                "description": "Humio Ingest Token"
+            }
+        },
+
+        "tagsByResource": {
+            "type": "object",
+            "defaultValue": {}
+        }
+    },
+    "variables": {
+        "functionAppName": "[parameters('appName')]",
+        "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'functions')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "name": "[variables('storageAccountName')]",
+            "apiVersion": "2019-06-01",
+            "location": "[resourceGroup().location]",
+            "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Storage/storageAccounts'), parameters('tagsByResource')['Microsoft.Storage/storageAccounts'], json('{}'))]",
+            "kind": "Storage",
+            "sku": {
+                "name": "[parameters('storageAccountType')]"
+            },
+            "properties": {
+                "minimumTlsVersion": "[parameters('storageAccountTLS')]"
+            }
+        },
+        {
+            "apiVersion": "2015-05-01",
+            "name": "[variables('functionAppName')]",
+            "type": "Microsoft.Insights/components",
+            "kind": "web",
+            "location": "[resourceGroup().location]",
+            "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/components'), parameters('tagsByResource')['Microsoft.Insights/components'], json('{}'))]",
+            "properties": {
+                "Application_Type": "web"
+            }
+        },
+        {
+            "apiVersion": "2019-08-01",
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('functionAppName')]",
+            "location": "[resourceGroup().location]",
+            "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Web/sites'), parameters('tagsByResource')['Microsoft.Web/sites'], json('{}'))]",
+            "kind": "functionapp",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+            ],
+            "properties": {
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('microsoft.insights/components/', variables('functionAppName')), '2015-05-01').InstrumentationKey]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "node"
+                        },
+                        {
+                            "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                            "value": "~12"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~3"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTSHARE",
+                            "value": "[toLower(variables('functionAppName'))]"
+                        },
+                        {
+                            "name": "EVENTHUB_CONNECTION_STRING",
+                            "value": "[parameters('eventHubConnectionString')]"
+                        },
+
+
+                        {
+                            "name": "AAD_LOG_HUB_NAME",
+                            "value": "[parameters('aadLogHubName')]"
+                        },
+                        {
+                            "name": "AAD_LOG_CONSUMER_GROUP",
+                            "value": "[parameters('aadLogEventHubConsumerGroup')]"
+                        },
+                        {
+                            "name": "AzureWebJobs.aad-logs.Disabled",
+                            "value": "[parameters('aadLogDisabled')]"
+                        },
+
+
+                        {
+                            "name": "INGEST_TOKEN",
+                            "value": "[parameters('IngestToken')]"
+                        },
+                        {
+                            "name": "HUMIO_URL",
+                            "value": "[parameters('HumioURL')]"
+                        },
+                        {
+                            "name": "BLOB_CONNECTION_STRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "Project",
+                            "value": "[parameters('githubRepoProject')]"
+                        }
+                    ]
+                }
+            },
+            "resources": [
+                {
+                    "apiVersion": "2016-08-01",
+                    "name": "web",
+                    "type": "sourcecontrols",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/Sites', variables('functionAppName'))]"
+                    ],
+                    "properties": {
+                        "RepoUrl": "[parameters('githubRepoURL')]",
+                        "branch": "[parameters('githubRepoBranch')]",
+                        "IsManualIntegration": true
+                    }
+                }
+            ] 
+        }
+    ]
+}
